@@ -603,6 +603,51 @@ function main_menu_on_quit()
 	in_main_menu = false
 end
 
+AddScriptCallback("actor_on_item_sell")
+AddScriptCallback("actor_on_item_buy")
+ui_inventory_UIInventory_TMode_Sell = nil
+ui_inventory_UIInventory_TMode_Buy = nil
+ui_inventory_UIInventory_On_Item_Exchange = nil
+function patch_ui_inventory()
+	ui_inventory_UIInventory_TMode_Sell = ui_inventory.UIInventory.TMode_Sell
+	ui_inventory_UIInventory_TMode_Buy = ui_inventory.UIInventory.TMode_Buy
+	ui_inventory_UIInventory_On_Item_Exchange = ui_inventory.UIInventory.On_Item_Exchange
+
+	ui_inventory.UIInventory.TMode_Sell = function(self)
+		self.on_sell_callback_flag = true
+		ui_inventory_UIInventory_TMode_Sell(self)
+		self.on_sell_callback_flag = nil
+	end
+
+	ui_inventory.UIInventory.TMode_Buy = function(self)
+		self.on_buy_callback_flag = true
+		ui_inventory_UIInventory_TMode_Buy(self)
+		self.on_buy_callback_flag = nil
+	end
+
+	ui_inventory.UIInventory.On_Item_Exchange = function(self, npc_from, npc_to, obj)
+		ui_inventory_UIInventory_On_Item_Exchange(self, npc_from, npc_to, obj)
+
+		if self.on_sell_callback_flag then
+			local cc = self.CC["actor_trade"]
+			if cc then
+				local cost = utils_item.get_item_cost(obj, cc.trade_profile)
+				SendScriptCallback("actor_on_item_sell", obj, cost, npc_to)
+			end
+		elseif self.on_buy_callback_flag then
+			local cc = self.CC["npc_trade"]
+			if cc then
+				local cost = utils_item.get_item_cost(obj, cc.trade_profile)
+				SendScriptCallback("actor_on_item_buy", obj, cost, npc_from)
+			end
+		end
+	end
+end
+
+function on_game_load()
+	patch_ui_inventory()
+end
+
 function on_game_start()
 	RegisterScriptCallback("main_menu_on_init", main_menu_on_init)
 	RegisterScriptCallback("main_menu_on_quit", main_menu_on_quit)
@@ -612,4 +657,5 @@ function on_game_start()
 	RegisterScriptCallback("game_object_on_net_destroy", game_object_on_net_destroy)
 	RegisterScriptCallback("server_object_on_register", server_object_on_register)
 	RegisterScriptCallback("server_object_on_unregister", server_object_on_unregister)
+	RegisterScriptCallback("on_game_load", on_game_load)
 end
