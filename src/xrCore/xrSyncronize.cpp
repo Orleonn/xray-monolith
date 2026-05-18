@@ -33,19 +33,21 @@ struct profiler
 };
 #endif // PROFILE_CRITICAL_SECTIONS
 
+using XRAY_CRITICAL_SECTION_HANDLE = CRITICAL_SECTION;
+
 #ifdef PROFILE_CRITICAL_SECTIONS
 xrCriticalSection::xrCriticalSection(LPCSTR id) : m_id(id)
 #else // PROFILE_CRITICAL_SECTIONS
 xrCriticalSection::xrCriticalSection()
 #endif // PROFILE_CRITICAL_SECTIONS
 {
-	pmutex = xr_alloc<CRITICAL_SECTION>(1);
-	InitializeCriticalSection((CRITICAL_SECTION*)pmutex);
+	pmutex = xr_alloc<XRAY_CRITICAL_SECTION_HANDLE>(1);
+	InitializeCriticalSection((XRAY_CRITICAL_SECTION_HANDLE*)pmutex);
 }
 
 xrCriticalSection::~xrCriticalSection()
 {
-	DeleteCriticalSection((CRITICAL_SECTION*)pmutex);
+	DeleteCriticalSection((XRAY_CRITICAL_SECTION_HANDLE*)pmutex);
 	xr_free(pmutex);
 }
 
@@ -63,17 +65,17 @@ void xrCriticalSection::Enter()
 # endif // DEBUG
     profiler temp(m_id);
 #endif // PROFILE_CRITICAL_SECTIONS
-	EnterCriticalSection((CRITICAL_SECTION*)pmutex);
+	EnterCriticalSection((XRAY_CRITICAL_SECTION_HANDLE*)pmutex);
 }
 
 void xrCriticalSection::Leave()
 {
-	LeaveCriticalSection((CRITICAL_SECTION*)pmutex);
+	LeaveCriticalSection((XRAY_CRITICAL_SECTION_HANDLE*)pmutex);
 }
 
 BOOL xrCriticalSection::TryEnter()
 {
-	return TryEnterCriticalSection((CRITICAL_SECTION*)pmutex);
+	return TryEnterCriticalSection((XRAY_CRITICAL_SECTION_HANDLE*)pmutex);
 }
 
 xrCriticalSection::raii::raii(xrCriticalSection* critical_section)
@@ -152,4 +154,34 @@ xrSRWLockGuard::~xrSRWLockGuard()
         lock->ReleaseShared();
     else
         lock->ReleaseExclusive();
+}
+
+
+
+xrConditionVariable::xrConditionVariable()
+    : handle{}
+{
+    InitializeConditionVariable(&handle);
+}
+
+bool xrConditionVariable::WaitFor(xrSRWLock& mtx, u32 milliseconds, bool shared)
+{
+    const ULONG flag = shared ? CONDITION_VARIABLE_LOCKMODE_SHARED : 0;
+    return static_cast<bool>(SleepConditionVariableSRW(&handle, &mtx.smutex, milliseconds, flag));
+}
+
+bool xrConditionVariable::WaitFor(xrCriticalSection& cs, u32 milliseconds)
+{
+    XRAY_CRITICAL_SECTION_HANDLE* const hCS = static_cast<XRAY_CRITICAL_SECTION_HANDLE*>(cs.pmutex);
+    return static_cast<bool>(SleepConditionVariableCS(&handle, hCS, milliseconds));
+}
+
+void xrConditionVariable::WakeOne()
+{
+    WakeConditionVariable(&handle);
+}
+
+void xrConditionVariable::WakeAll()
+{
+    WakeAllConditionVariable(&handle);
 }

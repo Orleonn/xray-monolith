@@ -19,9 +19,13 @@ void XRCORE_API set_add_profile_portion(add_profile_portion_callback callback);
 # define MUTEX_PROFILE_ID(a) STRINGIZER(CONCATENIZE(MUTEX_PROFILE_PREFIX_ID,a))
 #endif // PROFILE_CRITICAL_SECTIONS
 
+class xrConditionVariable;
+
 // Desc: Simple wrapper for critical section
 class XRCORE_API xrCriticalSection : xray::noncopyable
 {
+    friend class xrConditionVariable;
+
 public:
 	class XRCORE_API raii
 	{
@@ -79,6 +83,8 @@ using ThreadID = HANDLE;
 
 class XRCORE_API xrSRWLock
 {
+    friend class xrConditionVariable;
+
 private:
     SRWLOCK smutex;
 
@@ -111,3 +117,39 @@ private:
 };
 //Write functions guard: xrSRWLockGuard guard(lock); ...
 //Read functions guard: xrSRWLockGuard guard(lock, true); ...
+
+
+
+class xrConditionVariable : private xray::noncopyable
+{
+private:
+    CONDITION_VARIABLE handle;
+
+public:
+    xrConditionVariable();
+    ~xrConditionVariable() = default;
+
+public:
+    bool WaitFor(xrSRWLock& mtx, u32 milliseconds, bool shared = false);
+    bool WaitFor(xrCriticalSection& cs, u32 milliseconds);
+
+    template <typename Predicate>
+    void Wait(xrSRWLock& mtx, Predicate pred, bool shared = false)
+    {
+        while (!pred())
+        {
+            WaitFor(mtx, INFINITE, shared);
+        }
+    }
+    template <typename Predicate>
+    void Wait(xrCriticalSection& cs, Predicate pred)
+    {
+        while (!pred())
+        {
+            WaitFor(cs, INFINITE);
+        }
+    }
+
+    void WakeOne();
+    void WakeAll();
+};
